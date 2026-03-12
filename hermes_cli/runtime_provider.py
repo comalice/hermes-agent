@@ -18,6 +18,45 @@ from hermes_cli.config import load_config
 from hermes_constants import OPENROUTER_BASE_URL
 
 
+def _normalize_custom_provider_name(value: Optional[str]) -> str:
+    return (value or "").strip().lower().replace(" ", "-")
+
+
+def _resolve_custom_provider(requested: Optional[str]) -> Optional[Dict[str, Any]]:
+    requested_norm = _normalize_custom_provider_name(requested)
+    if not requested_norm or requested_norm == "auto":
+        return None
+
+    config = load_config()
+    custom_providers = config.get("custom_providers") or []
+    if not isinstance(custom_providers, list):
+        return None
+
+    for entry in custom_providers:
+        if not isinstance(entry, dict):
+            continue
+        name = entry.get("name")
+        base_url = (entry.get("base_url") or "").strip().rstrip("/")
+        if not name or not base_url:
+            continue
+
+        custom_name = _normalize_custom_provider_name(str(name))
+        if requested_norm not in {custom_name, f"custom:{custom_name}"}:
+            continue
+
+        api_mode = "codex_responses" if "chatgpt.com/backend-api/codex" in base_url.lower() else "chat_completions"
+        return {
+            "provider": custom_name,
+            "api_mode": api_mode,
+            "base_url": base_url,
+            "api_key": (entry.get("api_key") or "").strip(),
+            "source": "config.custom_providers",
+            "requested_provider": requested_norm,
+        }
+
+    return None
+
+
 def _get_model_config() -> Dict[str, Any]:
     config = load_config()
     model_cfg = config.get("model")
@@ -119,6 +158,10 @@ def resolve_runtime_provider(
 ) -> Dict[str, Any]:
     """Resolve runtime provider credentials for agent execution."""
     requested_provider = resolve_requested_provider(requested)
+
+    custom_runtime = _resolve_custom_provider(requested_provider)
+    if custom_runtime is not None:
+        return custom_runtime
 
     provider = resolve_provider(
         requested_provider,

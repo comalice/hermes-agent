@@ -200,7 +200,58 @@ def test_explicit_openrouter_skips_openai_base_url(monkeypatch):
     assert resolved["api_key"] == "or-test-key"
 
 
+def test_resolve_runtime_provider_custom_provider_from_config(monkeypatch):
+    monkeypatch.setattr(
+        rp,
+        "load_config",
+        lambda: {
+            "custom_providers": [
+                {
+                    "name": "local",
+                    "base_url": "http://0.0.0.0:8080/v1/",
+                    "api_key": "***",
+                    "model": "qwen-36b-q4_k_xl",
+                }
+            ]
+        },
+    )
+
+    resolved = rp.resolve_runtime_provider(requested="local")
+
+    assert resolved["provider"] == "local"
+    assert resolved["api_mode"] == "chat_completions"
+    assert resolved["base_url"] == "http://0.0.0.0:8080/v1"
+    assert resolved["api_key"] == "***"
+    assert resolved["requested_provider"] == "local"
+    assert resolved["source"] == "config.custom_providers"
+
+
+def test_resolve_runtime_provider_custom_provider_with_non_fqdn_hostnames(monkeypatch):
+    monkeypatch.setattr(
+        rp,
+        "load_config",
+        lambda: {
+            "custom_providers": [
+                {"name": "localhost", "base_url": "http://localhost:11434/v1/", "api_key": "", "model": "llama"},
+                {"name": "lab-box", "base_url": "http://lab-box:8080/v1/", "api_key": "token", "model": "qwen"},
+                {"name": "mesh", "base_url": "http://llm-node.local:9000/v1/", "api_key": "mesh-key", "model": "phi"},
+            ]
+        },
+    )
+
+    localhost = rp.resolve_runtime_provider(requested="localhost")
+    bare_host = rp.resolve_runtime_provider(requested="lab-box")
+    mdns = rp.resolve_runtime_provider(requested="mesh")
+
+    assert localhost["base_url"] == "http://localhost:11434/v1"
+    assert localhost["provider"] == "localhost"
+    assert bare_host["base_url"] == "http://lab-box:8080/v1"
+    assert bare_host["provider"] == "lab-box"
+    assert mdns["base_url"] == "http://llm-node.local:9000/v1"
+    assert mdns["provider"] == "mesh"
+
+
 def test_resolve_requested_provider_precedence(monkeypatch):
-    monkeypatch.setenv("HERMES_INFERENCE_PROVIDER", "nous")
+
     monkeypatch.setattr(rp, "_get_model_config", lambda: {"provider": "openai-codex"})
     assert rp.resolve_requested_provider("openrouter") == "openrouter"

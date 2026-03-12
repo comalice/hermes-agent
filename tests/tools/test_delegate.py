@@ -316,6 +316,32 @@ class TestDelegationCredentialResolution(unittest.TestCase):
         self.assertEqual(creds["api_key"], "nous-agent-key-xyz")
         mock_resolve.assert_called_once_with(requested="nous")
 
+    def test_custom_provider_resolves_from_config(self):
+        """Custom providers defined in config.yaml should be valid delegation targets."""
+        parent = _make_mock_parent(depth=0)
+        cfg = {"model": "zh-qwen27-thinking", "provider": "local"}
+
+        with patch(
+            "hermes_cli.runtime_provider.load_config",
+            lambda: {
+                "custom_providers": [
+                    {
+                        "name": "local",
+                        "base_url": "http://100.100.0.11:8931/v1/",
+                        "api_key": "no-api-key",
+                        "model": "zh-qwen27-thinking",
+                    }
+                ]
+            },
+        ):
+            creds = _resolve_delegation_credentials(cfg, parent)
+
+        self.assertEqual(creds["model"], "zh-qwen27-thinking")
+        self.assertEqual(creds["provider"], "local")
+        self.assertEqual(creds["base_url"], "http://100.100.0.11:8931/v1")
+        self.assertEqual(creds["api_key"], "no-api-key")
+        self.assertEqual(creds["api_mode"], "chat_completions")
+
     @patch("hermes_cli.runtime_provider.resolve_runtime_provider")
     def test_provider_resolution_failure_raises_valueerror(self, mock_resolve):
         """When provider resolution fails, ValueError is raised with helpful message."""
